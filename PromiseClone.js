@@ -2,11 +2,17 @@ const PENDING = 'pending';
 const FULFILLED = 'fulfilled';
 const REJECTED = 'rejected';
 
+const noop = function (a, b, c) { }
+
+const isFunc = ins => typeof ins === 'function'
+
+const isNative = (Ctor) => isFunc(Ctor) && /native code/.test(Ctor.toString())
+
 const { toString } = Object.prototype;
 const isPromiseClone =
     ins =>
         toString.call(ins).slice(8, -1) === 'PromiseClone' &&
-        ['then', 'catch'].every(_ => typeof ins[_] === 'function');
+        ['then', 'catch'].every(_ => isFunc(ins[_]));
 
 //类似于AggregateError，将在Promise.any全失败时抛出
 class AggregateCloneError extends Error {
@@ -16,12 +22,6 @@ class AggregateCloneError extends Error {
         this.error = this.message = message
     }
 }
-
-const noop = function (a, b, c) { }
-
-const isFunc = ins => typeof ins === 'function'
-
-const isNative = (Ctor) => isFunc(Ctor) && /native code/.test(Ctor.toString())
 
 /**
  * 全局对象
@@ -116,7 +116,7 @@ const parsePromiseResult = (res, thenPromise, resolve, reject) => {
             //尝试获取返回结果的then方法（以判断其是否为一个promise实例）
             let then = res.then;
 
-            if (typeof then === 'function') {
+            if (isFunc(then)) {
 
                 try {
 
@@ -160,12 +160,20 @@ class PromiseClone {
         this.onRejectedCallbacks = []; //异步失败函数存储器
 
         let resolve = value => {
-            //如果状态没有变更过，就允许更改状态为成功
-            if (this.state === PENDING) {
-                this.state = FULFILLED;
-                this.result = value;
-                this.onResolvedCallbacks.forEach(fn => fn()); //执行所有保存的then成功回调
-            }
+            //在处理resolve时，应该判断value是否为PromiseClone实例，如果是，则拿到它的返回结果
+            parsePromiseResult(
+                value,
+                this,
+                (value) => {
+                    //如果状态没有变更过，就允许更改状态为成功
+                    if (this.state === PENDING) {
+                        this.state = FULFILLED;
+                        this.result = value
+                        this.onResolvedCallbacks.forEach(fn => fn()); //执行所有保存的then成功回调
+                    }
+                },
+                reject
+            );
         }
 
         let reject = error => {
@@ -176,7 +184,6 @@ class PromiseClone {
                 this.onRejectedCallbacks.forEach(fn => fn()); //与上同理
             }
         }
-
 
         try {
             excutor(resolve, reject); //执行执行器函数
@@ -194,8 +201,8 @@ class PromiseClone {
     then(onresolved, onrejected) {
 
         //初始化成功和失败回调
-        typeof onresolved !== 'function' && (onresolved = value => value);
-        typeof onrejected !== 'function' && (onrejected = error => {
+        !isFunc(onresolved) && (onresolved = value => value);
+        !isFunc(onrejected) && (onrejected = error => {
             throw error;
         });
 
@@ -329,21 +336,11 @@ class PromiseClone {
             for (let i = 0; i < len; i++) {
 
                 let curItem = iterable[i];
-                //如果该项是个PromiseClone实例，就做深层判断，拿到最里层的PromiseClone实例的结果，
                 //遇到失败PromiseClone实例或错误抛出时，就更改为失败状态
                 if (isPromiseClone(curItem)) {
-                    let thenPromise = curItem.then(
+                    curItem.then(
                         res => {
-                            parsePromiseResult(
-                                res,
-                                thenPromise,
-                                res => {
-                                    handleLogic(i, res);
-                                },
-                                err => {
-                                    reject(err);
-                                }
-                            );
+                            handleLogic(i, res);
                         },
                         err => {
                             reject(err);
@@ -378,14 +375,7 @@ class PromiseClone {
                 let curItem = iterable[i];
                 if (isPromiseClone(curItem)) {
                     //等待解析完curItem（一个Promise实例）后，再返回最终结果
-                    let thenPromise = curItem.then(
-                        res => {
-                            parsePromiseResult(res, thenPromise, resolve, reject);
-                        },
-                        err => {
-                            reject(err);
-                        }
-                    );
+                    curItem.then(resolve, reject)
                 }
                 else {
                     //如果是非Promise，就放到异步的成功Promise中，以防先于前面的promise执行而带来的结果错误
@@ -434,18 +424,9 @@ class PromiseClone {
 
                 const curItem = iterable[i]
                 if (isPromiseClone(curItem)) {
-                    const thenPromise = curItem.then(
+                    curItem.then(
                         res => {
-                            parsePromiseResult(
-                                res,
-                                thenPromise,
-                                ret => {
-                                    handleLogic(i, ret, 'fulfilled')
-                                },
-                                err => {
-                                    handleLogic(i, err, 'rejected')
-                                }
-                            )
+                            handleLogic(i, res, 'fulfilled')
                         },
                         err => {
                             handleLogic(i, err, 'rejected')
@@ -490,15 +471,7 @@ class PromiseClone {
 
                 const curItem = iterable[i]
                 if (isPromiseClone(curItem)) {
-                    const thenPromise = curItem.then(
-                        res => {
-                            //深层解析promise的返回值
-                            parsePromiseResult(res, thenPromise, resolve, handleReject)
-                        },
-                        err => {
-                            handleReject(err)
-                        }
-                    )
+                    curItem.then(resolve, handleReject)
                 }
                 else {
                     PromiseClone.resolve(curItem).then(res => {
