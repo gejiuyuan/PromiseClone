@@ -1,0 +1,25 @@
+{
+  "name": "PromiseClone",
+  "version": "1.0.0",
+  "description": "手写Promise",
+  "main": "PromiseClone.js",
+  "scripts": {
+    "build": "rollup --config", 
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gejiuyuan/PromiseClone.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/gejiuyuan/PromiseClone/issues"
+  },
+  "homepage": "https://github.com/gejiuyuan/PromiseClone#readme",
+  "devDependencies": {
+    "@rollup/plugin-json": "^4.1.0",
+    "rollup": "^2.52.7",
+    "rollup-plugin-terser": "^7.0.2"
+  }
+}
